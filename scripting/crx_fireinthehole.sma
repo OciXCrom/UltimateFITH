@@ -231,11 +231,11 @@ ReadFile()
 					if(g_eSettings[EXPLODE_ENABLE])
 					{
 						if(equal(szKey, "EXPLODE_HE"))
-							g_eSettings[EXPLODE_HE] = floatclamp(str_to_float(szValue), 0.0, EXPLODE_MAX)
+							g_eSettings[EXPLODE_HE] = _:floatclamp(str_to_float(szValue), 0.0, EXPLODE_MAX)
 						else if(equal(szKey, "EXPLODE_FLASH"))
-							g_eSettings[EXPLODE_FLASH] = floatclamp(str_to_float(szValue), 0.0, EXPLODE_MAX)
+							g_eSettings[EXPLODE_FLASH] = _:floatclamp(str_to_float(szValue), 0.0, EXPLODE_MAX)
 						else if(equal(szKey, "EXPLODE_SMOKE"))
-							g_eSettings[EXPLODE_SMOKE] = floatclamp(str_to_float(szValue), 0.0, EXPLODE_MAX)
+							g_eSettings[EXPLODE_SMOKE] = _:floatclamp(str_to_float(szValue), 0.0, EXPLODE_MAX)
 					}
 				}
 			}	
