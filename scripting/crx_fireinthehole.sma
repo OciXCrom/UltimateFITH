@@ -1,23 +1,18 @@
 #include <amxmodx>
 #include <amxmisc>
+#include <cromchat>
 #include <csx>
 #include <fakemeta>
 
-#define PLUGIN_VERSION "2.0"
-
-#define CLR_MIN 3
-#define CLR_MAX 6
+#define PLUGIN_VERSION "2.1"
 #define EXPLODE_MAX 60.0
 
 enum _:Settings
 {
 	bool:MSG_ENABLE,
 	MSG_HE[128],
-	MSG_HE_COLOR,
 	MSG_FLASH[128],
-	MSG_FLASH_COLOR,
 	MSG_SMOKE[128],
-	MSG_SMOKE_COLOR,
 	MSG_SHOW_TYPE,
 	bool:MSG_ADMIN_LISTEN,
 	MSG_ADMIN_FLAG,
@@ -40,6 +35,7 @@ enum _:Settings
 	TRAIL_LIFE,
 	TRAIL_WIDTH,
 	TRAIL_BRIGHTNESS,
+	TRAIL_SHOW_TYPE,
 	bool:GLOW_ENABLE,
 	GLOW_HE[12],
 	GLOW_FLASH[12],
@@ -52,17 +48,16 @@ enum _:Settings
 	Float:EXPLODE_SMOKE
 }
 
+new g_iSprite
 new g_eSettings[Settings]
-new g_iSayText, g_iTeamInfo, g_iMaxPlayers, g_iSprite
 
 new const g_szRadio[] = "#Game_radio"
 new const g_szFireInTheHole[] = "#Fire_in_the_hole"
 new const g_szFITHSound[] = "radio/ct_fireinhole.wav"
 new const g_szMradFire[] = "%!MRAD_FIREINHOLE"
 new const g_szSetMdl[][] = { "models/w_", "grenade.mdl", "flashbang.mdl" }
-new const g_szTeamNames[][] = { "", "TERRORIST", "CT", "SPECTATOR" }
-new const g_szNameField[] = "%name%"
-new const g_szTeamField[] = "%team%"
+new const g_szNameField[] = "$name$"
+new const g_szTeamField[] = "$team$"
 
 public plugin_init()
 {
@@ -80,10 +75,6 @@ public plugin_init()
 		
 	if(g_eSettings[GLOW_ENABLE] || g_eSettings[EXPLODE_ENABLE])
 		register_forward(FM_SetModel, "OnSetModel")
-		
-	g_iSayText = get_user_msgid("SayText")
-	g_iTeamInfo = get_user_msgid("TeamInfo")
-	g_iMaxPlayers = get_maxplayers()
 }
 
 public plugin_precache()
@@ -115,7 +106,7 @@ ReadFile()
 			
 			switch(szData[0])
 			{
-				case EOS, ';': continue
+				case EOS, '#', ';': continue
 				case '[':
 				{
 					iSize = strlen(szData)
@@ -145,16 +136,10 @@ ReadFile()
 					{
 						if(equal(szKey, "MSG_HE"))
 							copy(g_eSettings[MSG_HE], charsmax(g_eSettings[MSG_HE]), szValue)
-						else if(equal(szKey, "MSG_HE_COLOR"))
-							g_eSettings[MSG_HE_COLOR] = clamp(str_to_num(szValue), CLR_MIN, CLR_MAX)
 						else if(equal(szKey, "MSG_FLASH"))
 							copy(g_eSettings[MSG_FLASH], charsmax(g_eSettings[MSG_FLASH]), szValue)
-						else if(equal(szKey, "MSG_FLASH_COLOR"))
-							g_eSettings[MSG_FLASH_COLOR] = clamp(str_to_num(szValue), CLR_MIN, CLR_MAX)
 						else if(equal(szKey, "MSG_SMOKE"))
 							copy(g_eSettings[MSG_SMOKE], charsmax(g_eSettings[MSG_SMOKE]), szValue)
-						else if(equal(szKey, "MSG_SMOKE_COLOR"))
-							g_eSettings[MSG_SMOKE_COLOR] = clamp(str_to_num(szValue), CLR_MIN, CLR_MAX)
 						else if(equal(szKey, "MSG_SHOW_TYPE"))
 							g_eSettings[MSG_SHOW_TYPE] = clamp(str_to_num(szValue), 0, 3)
 						else if(equal(szKey, "MSG_ADMIN_LISTEN"))
@@ -212,6 +197,8 @@ ReadFile()
 							g_eSettings[TRAIL_WIDTH] = str_to_num(szValue)
 						else if(equal(szKey, "TRAIL_BRIGHTNESS"))
 							g_eSettings[TRAIL_BRIGHTNESS] = clamp(str_to_num(szValue), 0, 255)
+						else if(equal(szKey, "TRAIL_SHOW_TYPE"))
+							g_eSettings[TRAIL_SHOW_TYPE] = clamp(str_to_num(szValue), 0, 2)
 					}
 					
 					if(g_eSettings[GLOW_ENABLE])
@@ -318,20 +305,17 @@ public OnSetModel(iEnt, const szModel[])
 
 public grenade_throw(id, iGrenade, iWeapon)
 {
-	new szMessage[192], szSound[128], szTrail[12], iColor, iTeam
+	new szMessage[192], szSound[128], szTeam[16], szTrail[12], iTeam
 	
 	if(is_user_connected(id))
-		iTeam = get_user_team(id)
+		iTeam = get_user_team(id, szTeam, charsmax(szTeam))
 		
 	switch(iWeapon)
 	{
 		case CSW_HEGRENADE:
 		{
 			if(g_eSettings[MSG_ENABLE] && g_eSettings[MSG_SHOW_TYPE])
-			{
 				copy(szMessage, charsmax(szMessage), g_eSettings[MSG_HE])
-				iColor = g_eSettings[MSG_HE_COLOR]
-			}
 			
 			if(g_eSettings[SOUND_ENABLE] && g_eSettings[SOUND_PLAY_TYPE] && g_eSettings[SOUND_HE_ENABLE])
 				copy(szSound, charsmax(szSound), g_eSettings[SOUND_HE])
@@ -342,10 +326,7 @@ public grenade_throw(id, iGrenade, iWeapon)
 		case CSW_FLASHBANG:
 		{
 			if(g_eSettings[MSG_ENABLE] && g_eSettings[MSG_SHOW_TYPE])
-			{
 				copy(szMessage, charsmax(szMessage), g_eSettings[MSG_FLASH])
-				iColor = g_eSettings[MSG_FLASH_COLOR]
-			}
 			
 			if(g_eSettings[SOUND_ENABLE] && g_eSettings[SOUND_PLAY_TYPE] && g_eSettings[SOUND_FLASH_ENABLE])
 				copy(szSound, charsmax(szSound), g_eSettings[SOUND_FLASH])
@@ -356,10 +337,7 @@ public grenade_throw(id, iGrenade, iWeapon)
 		case CSW_SMOKEGRENADE:
 		{
 			if(g_eSettings[MSG_ENABLE] && g_eSettings[MSG_SHOW_TYPE])
-			{
 				copy(szMessage, charsmax(szMessage), g_eSettings[MSG_SMOKE])
-				iColor = g_eSettings[MSG_SMOKE_COLOR]
-			}
 			
 			if(g_eSettings[SOUND_ENABLE] && g_eSettings[SOUND_PLAY_TYPE] && g_eSettings[SOUND_SMOKE_ENABLE])
 				copy(szSound, charsmax(szSound), g_eSettings[SOUND_SMOKE])
@@ -378,36 +356,25 @@ public grenade_throw(id, iGrenade, iWeapon)
 			replace_all(szMessage, charsmax(szMessage), g_szNameField, szName)
 			
 		if(contain(szMessage, g_szTeamField) != -1)
-		{
-			new szTeam[16]
-			
-			switch(iTeam)
-			{
-				case 1: copy(szTeam, charsmax(szTeam), g_eSettings[MSG_TEAM_T])
-				case 2: copy(szTeam, charsmax(szTeam), g_eSettings[MSG_TEAM_CT])
-				case 3: copy(szTeam, charsmax(szTeam), g_eSettings[MSG_TEAM_SPEC])
-			}
-			
 			replace_all(szMessage, charsmax(szMessage), g_szTeamField, szTeam)
-		}
 			
 		switch(g_eSettings[MSG_SHOW_TYPE])
 		{
-			case 1: ColorChat(id, Color:iColor, szMessage)
+			case 1: CC_SendMessage(id, szMessage)
 			case 2:
 			{
 				new iPlayers[32], iPnum
-				get_players(iPlayers, iPnum, "c")
+				get_players(iPlayers, iPnum, "ch")
 			
 				for(new i, iPlayer; i < iPnum; i++)
 				{
 					iPlayer = iPlayers[i]
 					
 					if(iTeam == get_user_team(iPlayer) || (g_eSettings[MSG_ADMIN_LISTEN] && get_user_flags(iPlayer) & g_eSettings[MSG_ADMIN_FLAG]))
-						ColorChat(iPlayer, Color:iColor, szMessage)
+						CC_SendMatched(iPlayer, id, szMessage)
 				}
 			}
-			case 3: ColorChat(0, Color:iColor, szMessage)
+			case 3: CC_SendMatched(0, id, szMessage)
 		}
 	}
 	
@@ -419,7 +386,7 @@ public grenade_throw(id, iGrenade, iWeapon)
 			case 2:
 			{
 				new iPlayers[32], iPnum
-				get_players(iPlayers, iPnum, "ce", g_szTeamNames[iTeam])
+				get_players(iPlayers, iPnum, "ceh", szTeam)
 			
 				for(new i; i < iPnum; i++)
 					client_cmd(iPlayers[i], "spk %s", szSound)
@@ -436,108 +403,42 @@ public grenade_throw(id, iGrenade, iWeapon)
 		iColor[1] = is_random(szGreen) ? random(256) : clamp(str_to_num(szGreen), 0, 255)
 		iColor[2] = is_random(szBlue) ? random(256) : clamp(str_to_num(szBlue), 0, 255)
 		
-		message_begin(MSG_BROADCAST, SVC_TEMPENTITY)
-		write_byte(TE_BEAMFOLLOW)
-		write_short(iGrenade)
-		write_short(g_iSprite)
-		write_byte(g_eSettings[TRAIL_LIFE])
-		write_byte(g_eSettings[TRAIL_WIDTH])
-		write_byte(iColor[0])
-		write_byte(iColor[1])
-		write_byte(iColor[2])
-		write_byte(g_eSettings[TRAIL_BRIGHTNESS])
-		message_end()
+		switch(g_eSettings[TRAIL_SHOW_TYPE])
+		{
+			case 0:	apply_grenade_trail(MSG_BROADCAST, iGrenade, iColor)
+			case 1:	apply_grenade_trail(MSG_ONE_UNRELIABLE, iGrenade, iColor, id)
+			case 2:
+			{
+				new iPlayers[32], iPnum
+				get_players(iPlayers, iPnum, "ceh", szTeam)
+				
+				for(new i; i < iPnum; i++)
+					apply_grenade_trail(MSG_ONE_UNRELIABLE, iGrenade, iColor, iPlayers[i])
+			}
+		}
 	}
+}
+
+apply_grenade_trail(iType, iGrenade, iColor[3], iPlayer = 0)
+{
+	message_begin(iType, SVC_TEMPENTITY, .player = iPlayer)
+	write_byte(TE_BEAMFOLLOW)
+	write_short(iGrenade)
+	write_short(g_iSprite)
+	write_byte(g_eSettings[TRAIL_LIFE])
+	write_byte(g_eSettings[TRAIL_WIDTH])
+	write_byte(iColor[0])
+	write_byte(iColor[1])
+	write_byte(iColor[2])
+	write_byte(g_eSettings[TRAIL_BRIGHTNESS])
+	message_end()
 }
 
 public OnPrecacheSound(const szSound[])
 	return equal(szSound, g_szFITHSound) ? FMRES_SUPERCEDE : FMRES_IGNORED
-
+	
 bool:is_blank(szString[])
 	return szString[0] == EOS
 	
 bool:is_random(szString[])
 	return szString[0] == 'R'
-	
-enum Color { NORMAL = 1, GREEN,	TEAM_COLOR,	GREY, RED, BLUE }
-
-ColorChat(id, Color:iType, const szMsg[], any:...)
-{
-	static szMessage[256]
-
-	switch(iType)
-	{
-		case NORMAL: szMessage[0] = 0x01
-		case GREEN: szMessage[0] = 0x04
-		default: szMessage[0] = 0x03
-	}
-
-	vformat(szMessage[1], charsmax(szMessage), szMsg, 4)
-	replace_all(szMessage, charsmax(szMessage), "!n", "^x01")
-	replace_all(szMessage, charsmax(szMessage), "!t", "^x03")
-	replace_all(szMessage, charsmax(szMessage), "!g", "^x04")
-		
-	static iTeam, ColorChange, iIndex, iMsgType
-	szMessage[192] = EOS
-	
-	if(id)
-	{
-		iMsgType = MSG_ONE
-		iIndex = id
-	}
-	else
-	{
-		iIndex = FindPlayer()
-		iMsgType = MSG_ALL
-	}
-	
-	iTeam = get_user_team(iIndex)
-	ColorChange = ColorSelection(iIndex, iMsgType, iType)
-	ShowColorMessage(iIndex, iMsgType, szMessage)
-		
-	if(ColorChange)
-		Team_Info(iIndex, iMsgType, g_szTeamNames[iTeam])
-}
-
-ShowColorMessage(id, iType, szMessage[])
-{
-	message_begin(iType, g_iSayText, _, id)
-	write_byte(id)		
-	write_string(szMessage)
-	message_end()
-}
-
-Team_Info(id, iType, iTeam[])
-{
-	message_begin(iType, g_iTeamInfo, _, id)
-	write_byte(id)
-	write_string(iTeam)
-	message_end()
-	return 1
-}
-
-ColorSelection(iIndex, iType, Color:Type)
-{
-	switch(Type)
-	{
-		case RED: return Team_Info(iIndex, iType, g_szTeamNames[1]);
-		case BLUE: return Team_Info(iIndex, iType, g_szTeamNames[2]);
-		case GREY: return Team_Info(iIndex, iType, g_szTeamNames[0]);
-	}
-
-	return 0
-}
-
-FindPlayer()
-{
-	static i
-	i = -1
-
-	while(i <= g_iMaxPlayers)
-	{
-		if(is_user_connected(++i))
-			return i;
-	}
-
-	return -1
-}
